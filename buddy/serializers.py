@@ -1,0 +1,97 @@
+from django.contrib.auth.models import User
+from .models import Book, Author, Reader, Review, BookBuddy
+from django.contrib.auth.password_validation import validate_password
+from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+"""Serializers the models"""
+class CustomTokenSerializer(TokenObtainPairSerializer):
+    @classmethod
+    def get_token(cls, user):
+        token = super().get_token(user)
+
+        # Add custom claims
+        token['username'] = user.username
+        token['is_superuser'] = user.is_superuser
+        return token
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        # Include additional user details in the response
+        data.update({'user': {
+            'username': self.user.username,
+            'is_superuser': self.user.is_superuser
+        }})
+        return data
+class ReaderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Reader
+        fields = ('pk', 'user', 'name', 'address', 'reader_num', 'city', 'state', 'zipcode',
+                  'email', 'created_date', 'updated_date')
+
+class BookSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Book
+        fields = ('pk', 'author', 'series_num', 'genre', 'summary', 'publisher', 'published_date',
+                  'page_total', 'title')
+
+class AuthorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Author
+        fields = ('birth_date','death_date', 'photo', 'name', 'auth_id')
+
+class ReviewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Review
+        fields = ('pk', 'book', 'reader', 'title', 'text', 'rating',
+                  'created_date', 'edited_date')
+
+class BookBuddySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BookBuddy
+        fields = ('pk', 'book', 'reader', 'fav_status', 'read_status', 'read_later_status',
+                  'currently_reading', 'current_page', 'last_read')
+
+
+"""Serializes logging in and registering the user"""
+class RegisterSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(
+        required=True,
+        validators=[UniqueValidator(queryset=User.objects.all())]
+    )
+    password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'}, validators=[validate_password])
+    password2 = serializers.CharField(write_only=True, style={'input_type': 'password'}, required=True)
+
+    class Meta:
+        model = User
+        fields = ('username', 'password', 'password2', 'email', 'first_name', 'last_name')
+        extra_kwargs = {
+            'first_name': {'required': True},
+            'last_name': {'required': True},
+            'password': {'write_only': True, 'min_length': 6},
+            'password2': {'write_only': True, 'min_length': 6}
+        }
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password2']:
+            raise serializers.ValidationError({"password": "Password fields didn't match."})
+
+        return attrs
+
+    def create(self, validated_data):
+        user = User.objects.create(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            first_name=validated_data['first_name'],
+            last_name=validated_data['last_name']
+        )
+        user.set_password(validated_data['password'])
+        user.save()
+
+        return user
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('id', 'username', 'is_superuser', 'first_name', 'last_name', 'email')
